@@ -5,5 +5,4 @@ cmake-build-*/
 # Pico SDK local copy/cache
 pico-sdk/
 
-# VS Code workspace-local settings
-.vscode/
+
