@@ -2,52 +2,69 @@
 #include "pico/stdlib.h"
 #include "cmps12.h"
 #include "servo_direction.h"
+#include "pid.h"
+
+#define DT                  0.15f   // 150ms
+#define DEADBAND            2.0f    // zone morte en degrés
+#define SERVO_CENTER_OFFSET 133.0f  // offset mécanique calibré
 
 static float heading_error_to_north(float heading_deg) {
-    // Compass heading is [0..360). Target north is 0 deg.
-    // Return shortest signed error in [-180..180].
-    if (heading_deg > 180.0f) {
-        heading_deg -= 360.0f;
-    }
+    if (heading_deg > 180.0f) heading_deg -= 360.0f;
     return heading_deg;
 }
 
 int main() {
     stdio_init_all();
+    while (!stdio_usb_connected()) sleep_ms(100);
+
     cmps12_init();
     servo_init();
 
-    const float servo_center = 90.0f;
-    const float servo_left = 60.0f;
-    const float servo_right = 120.0f;
-    const float deadband_deg = 5.0f;
-
-    // If steering is inverted on your mechanics, set this to -1.
     const int steering_sign = 1;
 
-    printf("=== North hold (no PID) ===\n");
+    PID pid_cap;
+    pid_init(&pid_cap, 0.25f, 0.0f, 0.05f, 30.0f);
+
+    printf("=== North hold (PID) ===\n");
+    printf("Servo center offset: %.1f deg\n", SERVO_CENTER_OFFSET);
 
     while (true) {
         NavData nav;
+        CalibData calib;
+
         if (!read_navigation_data(&nav)) {
-            servo_set_angle(servo_center);
+            servo_set_angle(SERVO_CENTER_OFFSET);
+            pid_reset(&pid_cap);
             printf("Compass read failed, steering center\n");
-            sleep_ms(200);
+            sleep_ms((uint32_t)(DT * 1000));
             continue;
         }
 
-        float err = heading_error_to_north(nav.cap);
-        float cmd = servo_center;
+        bool calib_ok = check_calibration(&calib);
 
-        if (err > deadband_deg) {
-            cmd = (steering_sign > 0) ? servo_left : servo_right;
-        } else if (err < -deadband_deg) {
-            cmd = (steering_sign > 0) ? servo_right : servo_left;
+        float err = heading_error_to_north(nav.cap);
+
+        if (err > -DEADBAND && err < DEADBAND) {
+            servo_set_angle(SERVO_CENTER_OFFSET);
+            pid_reset(&pid_cap);
+            printf("Cap:%.1f Pitch:%d Roll:%d | Err:%.1f | DEADBAND | Servo:%.1f",
+                   nav.cap, nav.pitch, nav.roll, err, SERVO_CENTER_OFFSET);
+        } else {
+            float correction = steering_sign * pid_compute(&pid_cap, err, DT);
+            float angle = SERVO_CENTER_OFFSET + correction;
+            servo_set_angle(angle);
+            printf("Cap:%.1f Pitch:%d Roll:%d | Err:%+.1f | Corr:%+.1f | Servo:%.1f",
+                   nav.cap, nav.pitch, nav.roll, err, correction, angle);
         }
 
-        servo_set_angle(cmd);
-        printf("Heading: %.1f deg | Error: %.1f deg | Servo: %.1f deg\n", nav.cap, err, cmd);
-        sleep_ms(150);
+        if (calib_ok) {
+            printf(" | Calib M:%d A:%d G:%d S:%d\n",
+                   calib.mag_cal, calib.acc_cal, calib.gyro_cal, calib.sys_cal);
+        } else {
+            printf(" | Calib read failed\n");
+        }
+
+        sleep_ms((uint32_t)(DT * 1000));
     }
 
     return 0;
