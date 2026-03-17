@@ -1,50 +1,54 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-
 #include "cmps12.h"
 #include "servo_direction.h"
 
-static float heading_to_servo_angle(float heading_deg) {
-    // Map compass heading [0..360] to servo angle [0..180]
-    if (heading_deg < 0.0f) {
-        heading_deg = 0.0f;
+static float heading_error_to_north(float heading_deg) {
+    // Compass heading is [0..360). Target north is 0 deg.
+    // Return shortest signed error in [-180..180].
+    if (heading_deg > 180.0f) {
+        heading_deg -= 360.0f;
     }
-    if (heading_deg > 360.0f) {
-        heading_deg = 360.0f;
-    }
-    return heading_deg * 0.5f;
+    return heading_deg;
 }
 
-int main(void) {
+int main() {
     stdio_init_all();
     cmps12_init();
     servo_init();
-    servo_set_angle(90.0f);
+
+    const float servo_center = 90.0f;
+    const float servo_left = 60.0f;
+    const float servo_right = 120.0f;
+    const float deadband_deg = 5.0f;
+
+    // If steering is inverted on your mechanics, set this to -1.
+    const int steering_sign = 1;
+
+    printf("=== North hold (no PID) ===\n");
 
     while (true) {
         NavData nav;
-        CalibData calib;
-
-        bool nav_ok = read_navigation_data(&nav);
-        bool calib_ok = check_calibration(&calib);
-
-        if (nav_ok) {
-            float servo_angle = heading_to_servo_angle(nav.cap);
-            servo_set_angle(servo_angle);
-            printf("Cap: %.1f deg, Servo: %.1f deg\n", nav.cap, servo_angle);
-        } else {
-            servo_set_angle(90.0f);
-            printf("Navigation read failed\n");
+        if (!read_navigation_data(&nav)) {
+            servo_set_angle(servo_center);
+            printf("Compass read failed, steering center\n");
+            sleep_ms(200);
+            continue;
         }
 
-        if (calib_ok) {
-            printf("Calib M:%d A:%d G:%d S:%d\n",
-                   calib.mag_cal,
-                   calib.acc_cal,
-                   calib.gyro_cal,
-                   calib.sys_cal);
+        float err = heading_error_to_north(nav.cap);
+        float cmd = servo_center;
+
+        if (err > deadband_deg) {
+            cmd = (steering_sign > 0) ? servo_left : servo_right;
+        } else if (err < -deadband_deg) {
+            cmd = (steering_sign > 0) ? servo_right : servo_left;
         }
 
-        sleep_ms(200);
+        servo_set_angle(cmd);
+        printf("Heading: %.1f deg | Error: %.1f deg | Servo: %.1f deg\n", nav.cap, err, cmd);
+        sleep_ms(150);
     }
+
+    return 0;
 }
