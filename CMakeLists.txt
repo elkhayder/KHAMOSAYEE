@@ -43,6 +43,7 @@ add_executable(khamosayee
     ${CMAKE_CURRENT_LIST_DIR}/main.c
     ${CMAKE_CURRENT_LIST_DIR}/cmps12.c
     ${CMAKE_CURRENT_LIST_DIR}/servo_direction.c
+    ${CMAKE_CURRENT_LIST_DIR}/servo_voile.c
     ${CMAKE_CURRENT_LIST_DIR}/pid.c
 )
 
