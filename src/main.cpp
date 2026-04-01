@@ -121,15 +121,6 @@ int main()
     sail.init();
     front_wheel.init();
 
-    printf("All Initiated!");
-
-    while (true)
-    {
-        int v = read_int();
-        printf("Received %d", v);
-        front_wheel.rotate_deg(v);
-    }
-
     if (cyw43_arch_init())
     {
         printf("CYW43 init failed!\n");
@@ -150,7 +141,7 @@ int main()
     sleep_ms(1000);
     calypso.connect();
 
+    printf("All Initiated!");
+
     return 0;
 }
-
-// Gauche max: 130
